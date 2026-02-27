@@ -35,7 +35,7 @@ From `cortexJob/functions/`:
 
 ## 4) Start emulators (local development)
 From `cortexJob/`:
-- `firebase emulators:start --only firestore,functions`
+- `firebase emulators:start --only functions,firestore --import ./emulator-data --export-on-exit`
   - Starts local Firestore DB (port 8080)
   - Starts local Functions API (port 5001)
   - UI at http://127.0.0.1:4000
@@ -71,3 +71,28 @@ From `cortexJob/`:
 
 (Optional) Deploy everything:
 - `firebase deploy`
+
+
+
+
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyARr61hJ-LHXAget3qtqAkuBWMWpEuD4ow",
+  authDomain: "cortex-job-dashboard.firebaseapp.com",
+  projectId: "cortex-job-dashboard",
+  storageBucket: "cortex-job-dashboard.firebasestorage.app",
+  messagingSenderId: "422188453614",
+  appId: "1:422188453614:web:a34e197dc96fe46703adff",
+  measurementId: "G-LMY3E20N0L"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);

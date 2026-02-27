@@ -46,13 +46,45 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-// GET all entries
-app.get("/traffic", requireAuth, async (_req: AuthedRequest, res: Response) => {
-  const snap = await db.collection("trafficStats").orderBy("date", "asc").get();
-  res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+// GET entries (paginated)
+// GET /traffic?limit=10&cursor=2025-03-10
+app.get("/traffic", requireAuth, async (req: AuthedRequest, res: Response) => {
+  // 1) Parse limit
+  const limitRaw = req.query.limit;
+  const limitNum = Number(Array.isArray(limitRaw) ? limitRaw[0] : limitRaw);
+  const limit = Number.isFinite(limitNum) && limitNum > 0 ? Math.min(limitNum, 100) : 10;
+
+  // 2) Parse cursor (a date string "YYYY-MM-DD")
+  const cursorRaw = req.query.cursor;
+  const cursor = Array.isArray(cursorRaw) ? cursorRaw[0] : cursorRaw;
+
+  if (cursor !== undefined && (typeof cursor !== "string" || !isValidIsoDate(cursor))) {
+    res.status(400).json({ error: "cursor must be YYYY-MM-DD string" });
+    return;
+  }
+
+  // 3) Build query
+  let q = db.collection("trafficStats").orderBy("date", "asc").limit(limit);
+
+  // cursor means: start AFTER this date
+  if (cursor) {
+    q = q.startAfter(cursor);
+  }
+
+  // 4) Execute
+  const snap = await q.get();
+
+  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  // 5) Compute nextCursor from the LAST document in this page
+  const last = snap.docs[snap.docs.length - 1];
+  const nextCursor =
+    last && typeof last.get("date") === "string" ? (last.get("date") as string) : null;
+
+  res.json({ items, nextCursor });
 });
 
-// POST create
+// POST create (upsert by date to avoid duplicates)
 app.post("/traffic", requireAuth, async (req: AuthedRequest, res: Response) => {
   const body = req.body ?? {};
   const date = body.date as unknown;
@@ -67,14 +99,28 @@ app.post("/traffic", requireAuth, async (req: AuthedRequest, res: Response) => {
     return;
   }
 
-  const ref = await db.collection("trafficStats").add({
-    date,
-    visits,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  const ref = db.collection("trafficStats").doc(date);
+
+  // If doc exists, keep createdAt, update updatedAt
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const createdAt = snap.exists
+      ? snap.get("createdAt")
+      : admin.firestore.FieldValue.serverTimestamp();
+
+    tx.set(
+      ref,
+      {
+        date,
+        visits,
+        createdAt,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
   });
 
-  res.status(201).json({ id: ref.id });
+  res.status(201).json({ id: date });
   return;
 });
 
