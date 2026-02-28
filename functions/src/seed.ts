@@ -4,6 +4,15 @@ admin.initializeApp();
 const db = admin.firestore();
 
 /**
+ * Editors (email-based RBAC)
+ * Doc id = normalized email (lowercase, trimmed)
+ */
+const editors = [
+  { email: "ohavasapir@gmail.com" },
+  { email: "example@mail.com" },
+];
+
+/**
  * Full traffic data
  */
 const trafficStats = [
@@ -70,25 +79,50 @@ const trafficStats = [
   { date: "2025-04-30", visits: 148 },
 ];
 
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 async function seed() {
-  console.log("Seeding trafficStats...");
+  console.log("Seeding trafficStats + editors...");
 
   const batch = db.batch();
+  const now = admin.firestore.FieldValue.serverTimestamp();
 
+  // Seed trafficStats (upsert by date doc id)
   trafficStats.forEach((item) => {
     const ref = db.collection("trafficStats").doc(item.date);
+    batch.set(
+      ref,
+      {
+        date: item.date,
+        visits: item.visits,
+        createdAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  });
 
-    batch.set(ref, {
-      date: item.date,
-      visits: item.visits,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+  // Seed editors (doc id = email)
+  editors.forEach((e) => {
+    const email = normalizeEmail(e.email);
+    const ref = db.collection("editors").doc(email);
+    batch.set(
+      ref,
+      {
+        email,
+        addedAt: now,
+        source: "seed",
+      },
+      { merge: true }
+    );
   });
 
   await batch.commit();
 
-  console.log(`Seeded ${trafficStats.length} documents (upsert by date).`);
+  console.log(`Seeded ${trafficStats.length} trafficStats docs.`);
+  console.log(`Seeded ${editors.length} editors.`);
 }
 
 seed()

@@ -1,14 +1,5 @@
+// src/api/client.ts
 import { getAuth } from "firebase/auth";
-
-/**
- * Your traffic entry shape as returned by the backend.
- * (Backend returns: { id, date, visits, ... })
- */
-export type TrafficEntry = {
-  id: string;
-  date: string; // YYYY-MM-DD
-  visits: number;
-};
 
 /**
  * Base URL of your backend API.
@@ -22,99 +13,143 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
   "http://127.0.0.1:5001/cortex-job-dashboard/us-central1/api";
 
+// Remove trailing slash if someone adds it in env
+const BASE_URL = API_BASE_URL.replace(/\/+$/, "");
+
 /**
- * Reads the currently logged-in Firebase user and returns a fresh ID token.
- *
- * Why this matters:
- * - Your backend (Cloud Function) verifies this token to know "who is calling".
- * - This is how you prevent anonymous users from calling your API.
+ * -------------------------
+ * Types
+ * -------------------------
  */
-async function getIdTokenOrThrow(): Promise<string> {
+
+export type TrafficItem = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  visits: number | null;
+  createdAt: any | null;
+  updatedAt: any | null;
+};
+
+export type TrafficResponse = {
+  items: TrafficItem[];
+  nextCursor: string | null;
+};
+
+export type MeResponse = {
+  uid: string;
+  email: string | null;
+  role: "editor" | "viewer";
+};
+
+/**
+ * -------------------------
+ * Helpers
+ * -------------------------
+ */
+
+async function getIdToken(): Promise<string> {
   const auth = getAuth();
   const user = auth.currentUser;
 
   if (!user) {
-    // No logged-in user => we cannot call protected endpoints
-    throw new Error("Not authenticated. Please log in first.");
+    throw new Error("User is not authenticated");
   }
 
-  // forceRefresh=true makes sure we don't use an expired token
-  return user.getIdToken(true);
+  // Automatically refreshes if expired
+  return await user.getIdToken();
 }
 
-/**
- * A small wrapper around fetch() that:
- * - Adds Authorization: Bearer <token>
- * - Sends/receives JSON
- * - Throws nice errors when backend returns non-2xx
- */
-async function fetchJson<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const token = await getIdTokenOrThrow();
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getIdToken();
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
     headers: {
-      ...(options.headers || {}),
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(init?.headers ?? {}),
     },
   });
 
-  // If server returned an error status code, try to read JSON error message
   if (!res.ok) {
-    let message = `Request failed (${res.status})`;
+    let message = `HTTP ${res.status}`;
 
     try {
-      const body = (await res.json()) as { error?: string };
-      if (body?.error) message = body.error;
+      const data = await res.json();
+      if (data?.error) {
+        message = `${message}: ${data.error}`;
+      }
     } catch {
-      // response wasn't JSON
+      // ignore JSON parse errors
     }
 
     throw new Error(message);
   }
 
-  // For endpoints that return no JSON, handle empty body safely
-  const text = await res.text();
-  if (!text) return undefined as T;
+  // Handle empty response (204)
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
 
-  return JSON.parse(text) as T;
+  return (await res.json()) as T;
 }
 
-/** ============================
- *  API functions (CRUD)
- *  ============================
+/**
+ * -------------------------
+ * API Calls
+ * -------------------------
  */
 
-export async function getTraffic(): Promise<TrafficEntry[]> {
-  return fetchJson<TrafficEntry[]>("/traffic", { method: "GET" });
+export async function apiMe(): Promise<MeResponse> {
+  return request<MeResponse>("/me", {
+    method: "GET",
+  });
 }
 
-export async function createTraffic(input: {
+export async function apiGetTraffic(params: {
+  limit?: number;
+  cursor?: string | null;
+  order?: "asc" | "desc";
+}): Promise<TrafficResponse> {
+  const qs = new URLSearchParams();
+
+  qs.set("limit", String(params.limit ?? 10));
+  qs.set("order", params.order ?? "asc");
+
+  if (params.cursor) {
+    qs.set("cursor", params.cursor);
+  }
+
+  return request<TrafficResponse>(`/traffic?${qs.toString()}`, {
+    method: "GET",
+  });
+}
+
+export async function apiCreateTraffic(input: {
   date: string;
   visits: number;
 }): Promise<{ id: string }> {
-  return fetchJson<{ id: string }>("/traffic", {
+  return request<{ id: string }>("/traffic", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
-export async function updateTraffic(
+export async function apiUpdateTraffic(
   id: string,
-  updates: Partial<{ date: string; visits: number }>
+  input: { visits: number }
 ): Promise<{ ok: true }> {
-  return fetchJson<{ ok: true }>(`/traffic/${encodeURIComponent(id)}`, {
+  return request<{ ok: true }>(`/traffic/${encodeURIComponent(id)}`, {
     method: "PUT",
-    body: JSON.stringify(updates),
+    body: JSON.stringify(input),
   });
 }
 
-export async function deleteTraffic(id: string): Promise<{ ok: true }> {
-  return fetchJson<{ ok: true }>(`/traffic/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
+export async function apiDeleteTraffic(
+  id: string
+): Promise<{ ok: true }> {
+  return request<{ ok: true }>(
+    `/traffic/${encodeURIComponent(id)}`,
+    { method: "DELETE" }
+  );
 }

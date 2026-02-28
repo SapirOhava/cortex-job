@@ -1,232 +1,209 @@
-import { useMemo, useState } from "react";
-import { useTraffic } from "../hooks/useTraffic";
-import type { TrafficEntry } from "../api/client";
-import TrafficChart from "./TrafficChart";
+import { useEffect, useMemo, useState } from "react";
+import {
+  apiCreateTraffic,
+  apiDeleteTraffic,
+  apiGetTraffic,
+  apiMe,
+  apiUpdateTraffic,
+  type MeResponse,
+  type TrafficItem,
+} from "../api/client";
+import { TrafficChart } from "./TrafficChart";
+import { TrafficTable } from "./TrafficTable";
 
-type SortKey = "date" | "visits";
-type SortDir = "asc" | "desc";
+type Order = "asc" | "desc";
 
-function compare(a: TrafficEntry, b: TrafficEntry, key: SortKey, dir: SortDir) {
-  const mul = dir === "asc" ? 1 : -1;
-
-  if (key === "date") {
-    // date is YYYY-MM-DD => string comparison works
-    return a.date.localeCompare(b.date) * mul;
-  }
-  return (a.visits - b.visits) * mul;
+function isIsoDate(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
-export default function Dashboard() {
-  const { items, loading, error, refresh, add, update, remove } = useTraffic();
+export function Dashboard() {
+  const [me, setMe] = useState<MeResponse | null>(null);
 
-  // Filters
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
+  const [rawItems, setRawItems] = useState<TrafficItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
 
-  // Sorting
-  const [sortKey, setSortKey] = useState<SortKey>("date");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // Controls
+  const [order, setOrder] = useState<Order>("asc");
+  const [limit, setLimit] = useState<number>(10);
 
-  // Create form
-  const [newDate, setNewDate] = useState("");
-  const [newVisits, setNewVisits] = useState<number>(0);
+  // Bonus filters: date range
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
-  // Edit (simple: one row at a time)
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDate, setEditDate] = useState("");
-  const [editVisits, setEditVisits] = useState<number>(0);
+  // UI state
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredSorted = useMemo(() => {
-    let data = items;
+  const role = me?.role ?? "viewer";
 
-    if (from) data = data.filter((x) => x.date >= from);
-    if (to) data = data.filter((x) => x.date <= to);
+  async function loadFirstPage() {
+    setError(null);
+    setLoading(true);
+    try {
+      const [meRes, trafficRes] = await Promise.all([
+        apiMe(),
+        apiGetTraffic({ limit, order, cursor: null }),
+      ]);
 
-    data = [...data].sort((a, b) => compare(a, b, sortKey, sortDir));
-    return data;
-  }, [items, from, to, sortKey, sortDir]);
-
-  function toggleSort(nextKey: SortKey) {
-    if (sortKey !== nextKey) {
-      setSortKey(nextKey);
-      setSortDir("asc");
-      return;
+      setMe(meRes);
+      setRawItems(trafficRes.items);
+      setNextCursor(trafficRes.nextCursor);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load dashboard");
+    } finally {
+      setLoading(false);
     }
-    setSortDir((d) => (d === "asc" ? "desc" : "asc"));
   }
 
-  async function onCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newDate) return;
-
-    await add({ date: newDate, visits: Number(newVisits) });
-    setNewDate("");
-    setNewVisits(0);
+  async function loadMore() {
+    if (!nextCursor) return;
+    setError(null);
+    setLoadingMore(true);
+    try {
+      const res = await apiGetTraffic({ limit, order, cursor: nextCursor });
+      setRawItems((prev) => [...prev, ...res.items]);
+      setNextCursor(res.nextCursor);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load more");
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
-  function startEdit(row: TrafficEntry) {
-    setEditingId(row.id);
-    setEditDate(row.date);
-    setEditVisits(row.visits);
+  useEffect(() => {
+    loadFirstPage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order, limit]);
+
+  // Apply bonus filters client-side (fast + simple for take-home)
+  const filteredItems = useMemo(() => {
+    let out = [...rawItems];
+
+    if (fromDate && isIsoDate(fromDate)) {
+      out = out.filter((x) => x.date >= fromDate);
+    }
+    if (toDate && isIsoDate(toDate)) {
+      out = out.filter((x) => x.date <= toDate);
+    }
+
+    // Keep table sorted exactly as user chose
+    out.sort((a, b) => (order === "asc" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)));
+
+    return out;
+  }, [rawItems, fromDate, toDate, order]);
+
+  async function handleCreate(input: { date: string; visits: number }) {
+    setError(null);
+    try {
+      await apiCreateTraffic(input);
+      await loadFirstPage();
+    } catch (e: any) {
+      setError(e?.message ?? "Create failed");
+    }
   }
 
-  function cancelEdit() {
-    setEditingId(null);
-    setEditDate("");
-    setEditVisits(0);
+  async function handleUpdate(id: string, input: { visits: number }) {
+    setError(null);
+    try {
+      await apiUpdateTraffic(id, input);
+      setRawItems((prev) => prev.map((x) => (x.id === id ? { ...x, visits: input.visits } : x)));
+    } catch (e: any) {
+      setError(e?.message ?? "Update failed");
+    }
   }
 
-  async function saveEdit() {
-    if (!editingId) return;
-    await update(editingId, { date: editDate, visits: Number(editVisits) });
-    cancelEdit();
+  async function handleDelete(id: string) {
+    setError(null);
+    try {
+      await apiDeleteTraffic(id);
+      setRawItems((prev) => prev.filter((x) => x.id !== id));
+    } catch (e: any) {
+      setError(e?.message ?? "Delete failed");
+    }
   }
 
   return (
-    <div style={{ maxWidth: 980, margin: "0 auto", padding: 24 }}>
-      <h2 style={{ marginTop: 0 }}>Traffic Dashboard</h2>
-
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <button onClick={refresh} disabled={loading}>
-          {loading ? "Loading..." : "Refresh"}
-        </button>
-
-        <div style={{ marginLeft: "auto", display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <label>
-            From:{" "}
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label>
-            To:{" "}
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
-          <button onClick={() => { setFrom(""); setTo(""); }}>Clear</button>
+    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Cortex Traffic Dashboard</h2>
+          <div style={{ fontSize: 14, opacity: 0.8 }}>
+            User: <b>{me?.email ?? "…"}</b> • Role: <b>{role}</b>
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <div style={{ marginTop: 12, padding: 12, background: "#ffe5e5", borderRadius: 8 }}>
-          <b>Error:</b> {error}
-        </div>
-      )}
-
-        <TrafficChart entries={filteredSorted} />
-
-      {/* Create */}
-      <form onSubmit={onCreate} style={{ marginTop: 16, padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>
-        <h3 style={{ marginTop: 0 }}>Add entry</h3>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <label>
-            Date:{" "}
-            <input
-              type="date"
-              value={newDate}
-              onChange={(e) => setNewDate(e.target.value)}
-              required
-            />
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ fontSize: 14 }}>
+            Order{" "}
+            <select value={order} onChange={(e) => setOrder(e.target.value as Order)}>
+              <option value="asc">asc (old → new)</option>
+              <option value="desc">desc (new → old)</option>
+            </select>
           </label>
 
-          <label>
-            Visits:{" "}
-            <input
-              type="number"
-              min={0}
-              value={newVisits}
-              onChange={(e) => setNewVisits(Number(e.target.value))}
-              required
-            />
+          <label style={{ fontSize: 14 }}>
+            Page size{" "}
+            <select value={String(limit)} onChange={(e) => setLimit(Number(e.target.value))}>
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
           </label>
 
-          <button type="submit" disabled={loading}>
-            Add
+          <button onClick={loadFirstPage} disabled={loading}>
+            Refresh
           </button>
         </div>
-        <small style={{ display: "block", marginTop: 8, color: "#666" }}>
-          Note: if your backend currently uses <code>.add()</code>, adding a date that already exists may create duplicates.
-          (We can switch backend POST to upsert by date if you want.)
-        </small>
-      </form>
-
-      {/* Table */}
-      <div style={{ marginTop: 16, overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th
-                style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8, cursor: "pointer" }}
-                onClick={() => toggleSort("date")}
-              >
-                Date {sortKey === "date" ? (sortDir === "asc" ? "▲" : "▼") : ""}
-              </th>
-              <th
-                style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8, cursor: "pointer" }}
-                onClick={() => toggleSort("visits")}
-              >
-                Visits {sortKey === "visits" ? (sortDir === "asc" ? "▲" : "▼") : ""}
-              </th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ddd", padding: 8 }}>
-                Actions
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {filteredSorted.map((row) => {
-              const isEditing = editingId === row.id;
-
-              return (
-                <tr key={row.id}>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {isEditing ? (
-                      <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
-                    ) : (
-                      row.date
-                    )}
-                  </td>
-
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        min={0}
-                        value={editVisits}
-                        onChange={(e) => setEditVisits(Number(e.target.value))}
-                      />
-                    ) : (
-                      row.visits
-                    )}
-                  </td>
-
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {!isEditing ? (
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button onClick={() => startEdit(row)} disabled={loading}>Edit</button>
-                        <button onClick={() => remove(row.id)} disabled={loading}>Delete</button>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button onClick={saveEdit} disabled={loading}>Save</button>
-                        <button onClick={cancelEdit} disabled={loading}>Cancel</button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-
-            {!loading && filteredSorted.length === 0 && (
-              <tr>
-                <td colSpan={3} style={{ padding: 12, color: "#666" }}>
-                  No results. Try clearing filters.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
       </div>
 
-      <div style={{ marginTop: 12, color: "#666" }}>
-        Showing <b>{filteredSorted.length}</b> of <b>{items.length}</b> entries
+      {/* Bonus: date range filter */}
+      <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
+        <div style={{ fontWeight: 600 }}>Filters (bonus)</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+          <label style={{ fontSize: 14 }}>
+            From{" "}
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </label>
+          <label style={{ fontSize: 14 }}>
+            To{" "}
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </label>
+
+          <button
+            onClick={() => {
+              setFromDate("");
+              setToDate("");
+            }}
+          >
+            Clear
+          </button>
+        </div>
+        <div style={{ fontSize: 13, opacity: 0.75, marginTop: 6 }}>
+          Note: filtering is applied client-side (simple + fast for the take-home).
+        </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <TrafficChart items={filteredItems} />
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <TrafficTable
+          items={filteredItems}
+          loading={loading}
+          loadingMore={loadingMore}
+          error={error}
+          role={role}
+          nextCursor={nextCursor}
+          onRefresh={loadFirstPage}
+          onLoadMore={loadMore}
+          onCreate={handleCreate}
+          onUpdate={handleUpdate}
+          onDelete={handleDelete}
+        />
       </div>
     </div>
   );
