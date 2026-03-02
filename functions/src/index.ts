@@ -1,5 +1,6 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 
@@ -197,7 +198,7 @@ app.post("/traffic", requireAuth, requireEditor, async (req: AuthedRequest, res:
 
     const createdAt = snap.exists
       ? snap.get("createdAt")
-      : admin.firestore.FieldValue.serverTimestamp();
+      : FieldValue.serverTimestamp();
 
     tx.set(
       ref,
@@ -205,7 +206,7 @@ app.post("/traffic", requireAuth, requireEditor, async (req: AuthedRequest, res:
         date, // keep aligned with id
         visits,
         createdAt,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
@@ -252,7 +253,7 @@ app.put("/traffic/:id", requireAuth, requireEditor, async (req: AuthedRequest, r
         {
           // date remains unchanged (we do NOT allow updating it)
           visits,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
       );

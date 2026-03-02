@@ -1,4 +1,6 @@
 import * as admin from "firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
+
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -87,7 +89,7 @@ async function seed() {
   console.log("Seeding trafficStats + editors...");
 
   const batch = db.batch();
-  const now = admin.firestore.FieldValue.serverTimestamp();
+  const now = FieldValue.serverTimestamp();
 
   // Seed trafficStats (upsert by date doc id)
   trafficStats.forEach((item) => {
