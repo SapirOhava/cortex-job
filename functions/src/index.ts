@@ -89,7 +89,11 @@ async function isEditorEmail(email: string): Promise<boolean> {
   return snap.exists;
 }
 
-async function requireEditor(req: AuthedRequest, res: Response, next: NextFunction) {
+async function requireEditor(
+  req: AuthedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
   if (!req.user) {
     res.status(401).json({ error: "Unauthenticated" });
     return;
@@ -116,21 +120,29 @@ async function requireEditor(req: AuthedRequest, res: Response, next: NextFuncti
 
 /**
  * -------------------------
- * Routes
+ * Router mounted under /api
  * -------------------------
+ * This is IMPORTANT for Firebase Hosting rewrites:
+ * Hosting forwards /api/... to the function, so Express must handle /api/... routes.
  */
+const apiRouter = express.Router();
+
+// Optional root handler (nice for quick checks)
+apiRouter.get("/", (_req: Request, res: Response) => {
+  res.json({ ok: true, service: "cortex-job-dashboard-api", hint: "Try /api/health" });
+});
 
 // Health check (no auth) - useful for deployments
-app.get("/health", (_req: Request, res: Response) => {
+apiRouter.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true, service: "cortex-job-dashboard-api" });
 });
 
 /**
- * GET /traffic?limit=10&cursor=2025-03-10&order=asc
+ * GET /api/traffic?limit=10&cursor=2025-03-10&order=asc
  * - Pagination is by date field ordering (string YYYY-MM-DD).
  * - Cursor means "start AFTER this date" in the chosen order.
  */
-app.get("/traffic", requireAuth, async (req: AuthedRequest, res: Response) => {
+apiRouter.get("/traffic", requireAuth, async (req: AuthedRequest, res: Response) => {
   const limit = parseLimit(req.query.limit, 10);
   const order = parseOrder(req.query.order);
 
@@ -171,113 +183,115 @@ app.get("/traffic", requireAuth, async (req: AuthedRequest, res: Response) => {
 });
 
 /**
- * POST /traffic  (UPSERT by date)
+ * POST /api/traffic  (UPSERT by date)
  * Body: { date: "YYYY-MM-DD", visits: number }
  * - Editor only.
  * - Date is immutable and must match document id.
  */
-app.post("/traffic", requireAuth, requireEditor, async (req: AuthedRequest, res: Response) => {
-  const body = req.body ?? {};
-  const date = body.date as unknown;
-  const visits = body.visits as unknown;
+apiRouter.post(
+  "/traffic",
+  requireAuth,
+  requireEditor,
+  async (req: AuthedRequest, res: Response) => {
+    const body = req.body ?? {};
+    const date = body.date as unknown;
+    const visits = body.visits as unknown;
 
-  if (typeof date !== "string" || !isValidIsoDate(date)) {
-    res.status(400).json({ error: "date must be a YYYY-MM-DD string" });
-    return;
+    if (typeof date !== "string" || !isValidIsoDate(date)) {
+      res.status(400).json({ error: "date must be a YYYY-MM-DD string" });
+      return;
+    }
+    if (typeof visits !== "number" || !Number.isFinite(visits) || visits < 0) {
+      res.status(400).json({ error: "visits must be a non-negative number" });
+      return;
+    }
+
+    const ref = db.collection("trafficStats").doc(date);
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+
+      const createdAt = snap.exists ? snap.get("createdAt") : FieldValue.serverTimestamp();
+
+      tx.set(
+        ref,
+        {
+          date, // keep aligned with id
+          visits,
+          createdAt,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+
+    res.status(201).json({ id: date });
   }
-  if (typeof visits !== "number" || !Number.isFinite(visits) || visits < 0) {
-    res.status(400).json({ error: "visits must be a non-negative number" });
-    return;
-  }
-
-  const ref = db.collection("trafficStats").doc(date);
-
-  // Upsert while preserving createdAt if already exists
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-
-    const createdAt = snap.exists
-      ? snap.get("createdAt")
-      : FieldValue.serverTimestamp();
-
-    tx.set(
-      ref,
-      {
-        date, // keep aligned with id
-        visits,
-        createdAt,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
-  });
-
-  res.status(201).json({ id: date });
-});
+);
 
 /**
- * PUT /traffic/:id
+ * PUT /api/traffic/:id
  * Body: { visits: number }
  * - Editor only.
  * - Date is IMMUTABLE (not allowed here).
  * - 404 if doc doesn't exist.
  */
-app.put("/traffic/:id", requireAuth, requireEditor, async (req: AuthedRequest, res: Response) => {
-  const id = String(req.params.id);
+apiRouter.put(
+  "/traffic/:id",
+  requireAuth,
+  requireEditor,
+  async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
 
-  if (!isValidIsoDate(id)) {
-    res.status(400).json({ error: "id must be a YYYY-MM-DD date (document id)" });
-    return;
+    if (!isValidIsoDate(id)) {
+      res.status(400).json({ error: "id must be a YYYY-MM-DD date (document id)" });
+      return;
+    }
+
+    const body = req.body ?? {};
+    const visits = body.visits as unknown;
+
+    if (typeof visits !== "number" || !Number.isFinite(visits) || visits < 0) {
+      res.status(400).json({ error: "visits must be a non-negative number" });
+      return;
+    }
+
+    const ref = db.collection("trafficStats").doc(id);
+
+    await db
+      .runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new Error("NOT_FOUND");
+
+        tx.set(
+          ref,
+          {
+            visits,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      })
+      .catch((err) => {
+        if (String(err?.message || "").includes("NOT_FOUND")) {
+          res.status(404).json({ error: "Not found" });
+          return;
+        }
+        throw err;
+      });
+
+    if (res.headersSent) return;
+
+    res.json({ ok: true });
   }
-
-  const body = req.body ?? {};
-  const visits = body.visits as unknown;
-
-  if (typeof visits !== "number" || !Number.isFinite(visits) || visits < 0) {
-    res.status(400).json({ error: "visits must be a non-negative number" });
-    return;
-  }
-
-  const ref = db.collection("trafficStats").doc(id);
-
-  await db
-    .runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) {
-        // Throw to break transaction and map to 404 below
-        throw new Error("NOT_FOUND");
-      }
-
-      tx.set(
-        ref,
-        {
-          // date remains unchanged (we do NOT allow updating it)
-          visits,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-    })
-    .catch((err) => {
-      if (String(err?.message || "").includes("NOT_FOUND")) {
-        res.status(404).json({ error: "Not found" });
-        return;
-      }
-      throw err;
-    });
-
-  // If we already responded with 404 above, stop here.
-  if (res.headersSent) return;
-
-  res.json({ ok: true });
-});
+);
 
 /**
- * DELETE /traffic/:id
+ * DELETE /api/traffic/:id
  * - Editor only.
  * - 404 if doc doesn't exist.
  */
-app.delete(
+apiRouter.delete(
   "/traffic/:id",
   requireAuth,
   requireEditor,
@@ -294,9 +308,7 @@ app.delete(
     await db
       .runTransaction(async (tx) => {
         const snap = await tx.get(ref);
-        if (!snap.exists) {
-          throw new Error("NOT_FOUND");
-        }
+        if (!snap.exists) throw new Error("NOT_FOUND");
         tx.delete(ref);
       })
       .catch((err) => {
@@ -314,10 +326,10 @@ app.delete(
 );
 
 /**
- * Optional: expose current user's role (handy for UI gating)
- * GET /me
+ * GET /api/me
+ * Expose current user's role (handy for UI gating)
  */
-app.get("/me", requireAuth, async (req: AuthedRequest, res: Response) => {
+apiRouter.get("/me", requireAuth, async (req: AuthedRequest, res: Response) => {
   const user = req.user!;
   const email = user.email ?? null;
 
@@ -333,9 +345,10 @@ app.get("/me", requireAuth, async (req: AuthedRequest, res: Response) => {
   });
 });
 
+// Mount router under /api (THIS is the important change)
+app.use("/api", apiRouter);
+
 /**
- * Export as a single HTTP function (v2)
- * URL will be something like:
- *   https://<region>-<project>.cloudfunctions.net/api
+ * Export HTTPS function
  */
 export const api = functions.https.onRequest(app);

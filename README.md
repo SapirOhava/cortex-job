@@ -1,257 +1,207 @@
+
 # Cortex Job Dashboard
 
-**Fullstack Developer Home Task -- Interactive Dashboard with Firebase**
+**Fullstack Developer Home Task — Interactive Dashboard with Firebase**
 
-📄 **Assignment PDF:**\
-[View Assignment](docs/Fullstack%20home%20task.pdf)
+---
 
-------------------------------------------------------------------------
+## 🌐 Live Deployed Application
+
+Production URL:
+
+https://cortex-job-dashboard.web.app
+
+API Base:
+
+https://cortex-job-dashboard.web.app/api
+
+Health Check:
+
+https://cortex-job-dashboard.web.app/api/health
+
+---
+
+## 📄 Assignment Document
+
+See: docs/Fullstack home task.pdf
+
+---
 
 # Overview
 
-This project is a fullstack web application built with:
+This project is a fullstack web application built according to the assignment requirements.
 
--   React (Vite + TypeScript)
--   Firebase Firestore
--   Firebase Cloud Functions (Express API)
--   Firebase Authentication (Google Sign-In)
--   Recharts (Open-source chart library)
+### Tech Stack
 
-The application displays and manages daily traffic data (date → visits)
-in both a table and an interactive chart, following the assignment
-requirements.
+- Frontend: React (Vite + TypeScript)
+- Backend: Firebase Cloud Functions (Express API)
+- Database: Firebase Firestore
+- Authentication: Firebase Authentication (Google Sign-In)
+- Charts: Recharts
+- Hosting: Firebase Hosting
 
-The project is structured with:
+Architecture:
 
--   Backend API layer (no direct DB access from frontend)
--   Authentication middleware
--   Role-based access control
--   Environment configuration
--   Modular and readable code
+Frontend → Express API → Firestore
 
-------------------------------------------------------------------------
+The frontend does not access Firestore directly. All data flows through a secured backend API.
 
-# How to Run the Project Locally
+---
 
-## Requirements
+# Features
 
--   Node.js (v18+ recommended)
--   Firebase CLI
+## Core
 
-Install Firebase CLI:
+- Traffic table (date → visits)
+- Line chart visualization
+- Sorting (ascending / descending)
+- Cursor-based pagination
+- Add / Edit / Delete entries
+- Google Authentication
+- Backend token verification
 
-``` bash
-npm install -g firebase-tools
-```
+## Bonus
 
-Login:
+- Daily / Weekly / Monthly aggregation toggle
+- Date range filtering
+- Role-based access control (viewer / editor)
+- Production deployment (Hosting + Functions)
 
-``` bash
-firebase login
-```
+---
 
-Select project:
+# Firestore Structure
 
-``` bash
-firebase use cortex-job-dashboard
-```
+Collection: trafficStats
 
-------------------------------------------------------------------------
-
-## Step 1 --- Install Backend Dependencies
-
-``` bash
-cd functions
-npm install
-npm run build
-```
-
-⚠ Important:\
-The backend runs from `lib/index.js` (compiled output), so
-`npm run build` is required after any TypeScript changes.
-
-------------------------------------------------------------------------
-
-## Step 2 --- Install Frontend Dependencies
-
-``` bash
-cd ../frontend
-npm install
-```
-
-------------------------------------------------------------------------
-
-## Step 3 --- Configure Environment Variables
-
-Create:
-
-frontend/.env.local
-
-Add:
-
-    VITE_FIREBASE_API_KEY=...
-    VITE_FIREBASE_AUTH_DOMAIN=cortex-job-dashboard.firebaseapp.com
-    VITE_FIREBASE_PROJECT_ID=cortex-job-dashboard
-    VITE_FIREBASE_APP_ID=...
-    VITE_FIREBASE_MEASUREMENT_ID=...
-
-    VITE_API_BASE_URL=http://127.0.0.1:5001/cortex-job-dashboard/us-central1/api
-
-------------------------------------------------------------------------
-
-## Step 4 --- Start Firebase Emulators
-
-From project root:
-
-``` bash
-firebase emulators:start --only functions,firestore --import ./emulator-data --export-on-exit
-```
-
-This starts:
-
--   Functions Emulator → http://127.0.0.1:5001\
--   Firestore Emulator → http://127.0.0.1:8080\
--   Emulator UI → http://127.0.0.1:4000
-
-------------------------------------------------------------------------
-
-## Step 5 --- Start Frontend
-
-In a second terminal:
-
-``` bash
-cd frontend
-npm run dev
-```
-
-Open the local URL shown in the terminal.
-
-Login with Google and the dashboard will load.
-
-------------------------------------------------------------------------
-
-# Assignment Requirements → Implementation
-
-## Frontend (React)
-
--   Responsive dashboard layout
--   Table displaying traffic entries
--   Line chart using Recharts
--   Sorting by date (asc/desc)
--   Date range filtering
--   Daily / Weekly / Monthly aggregation toggle
--   CRUD form (add, edit, delete)
-
-------------------------------------------------------------------------
-
-## Data Structure (Firestore)
-
-Collection:
-
-trafficStats
-
-Document structure:
-
-``` json
-{
-  "date": "YYYY-MM-DD",
-  "visits": number
-}
-```
-
--   Document ID = date
--   Full dataset seeded (March--April 2025)
--   Emulator import/export supported
-
-------------------------------------------------------------------------
-
-## Backend (Cloud Functions)
-
-Express API endpoints:
-
-  Method   Endpoint       Description
-  -------- -------------- ----------------------------
-  GET      /health        Health check
-  GET      /traffic       Fetch traffic entries
-  POST     /traffic       Add new entry
-  PUT      /traffic/:id   Update entry
-  DELETE   /traffic/:id   Remove entry
-  GET      /me            Return current user + role
-
-Frontend does NOT access Firestore directly.
-
-------------------------------------------------------------------------
-
-## Authentication
-
--   Firebase Authentication (Google Sign-In)
--   Only logged-in users can access dashboard
--   Backend verifies token using:
-
-``` ts
-admin.auth().verifyIdToken()
-```
-
-Authorization header:
-
-    Authorization: Bearer <ID_TOKEN>
-
-------------------------------------------------------------------------
-
-## Pagination (Bonus)
-
-Cursor-based pagination:
-
-``` ts
-.orderBy("date", order)
-.limit(limit)
-.startAfter(cursor)
-```
+Document ID = YYYY-MM-DD
 
 Example:
 
-    GET /traffic?limit=10
-    GET /traffic?limit=10&cursor=2025-03-10
+{
+  "date": "2025-03-01",
+  "visits": 120,
+  "createdAt": timestamp,
+  "updatedAt": timestamp
+}
 
-------------------------------------------------------------------------
+Role collection:
 
-# Build for Production
+Collection: editors
 
-Frontend:
+Document ID = normalized email
 
-``` bash
-cd frontend
-npm run build
-```
+If document exists → user is editor.
+
+---
+
+# API Endpoints
+
+Base path: /api
+
+GET    /api/health  
+GET    /api/me  
+GET    /api/traffic  
+POST   /api/traffic  
+PUT    /api/traffic/:id  
+DELETE /api/traffic/:id  
+
+Authentication header:
+
+Authorization: Bearer <Firebase ID Token>
+
+---
+
+# Run Locally
+
+Requirements:
+
+- Node.js v18+
+- Firebase CLI
+
+Install CLI:
+
+npm install -g firebase-tools
+
+Login:
+
+firebase login
+
+Select project:
+
+firebase use cortex-job-dashboard
+
+---
 
 Backend:
 
-``` bash
-cd functions
-npm run build
-```
+cd functions  
+npm install  
+npm run build  
 
-------------------------------------------------------------------------
+---
 
-# Deployment
+Frontend:
 
-Deploy both hosting and functions:
+cd frontend  
+npm install  
 
-``` bash
+Create frontend/.env.local and add:
+
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=cortex-job-dashboard.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=cortex-job-dashboard
+VITE_FIREBASE_APP_ID=...
+VITE_FIREBASE_MEASUREMENT_ID=...
+
+VITE_API_BASE_URL=http://127.0.0.1:5001/cortex-job-dashboard/us-central1/api
+
+---
+
+Start emulators (from root):
+
+firebase emulators:start --only functions,firestore --import ./emulator-data --export-on-exit
+
+---
+
+Start frontend:
+
+cd frontend  
+npm run dev  
+
+---
+
+# Production Deployment
+
+Build frontend:
+
+cd frontend  
+npm run build  
+
+Build backend:
+
+cd ../functions  
+npm run build  
+
+Deploy:
+
 firebase deploy --only functions,hosting
-```
 
-(Add deployed link here)
+---
 
-------------------------------------------------------------------------
+Production URL:
+
+https://cortex-job-dashboard.web.app
+
+---
 
 # Summary
 
 This project demonstrates:
 
--   Secure frontend/backend integration
--   Firebase Authentication + token verification
--   Firestore querying with pagination
--   Data aggregation for chart views
--   Clean, modular TypeScript architecture
--   Production-oriented project structure
+- Secure frontend/backend separation
+- Firebase Auth with server-side verification
+- Role-based access control
+- Firestore transactional writes
+- Cursor-based pagination
+- Data aggregation (daily / weekly / monthly)
+- Production-ready Firebase deployment
