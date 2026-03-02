@@ -1,73 +1,102 @@
-
 # Cortex Job Dashboard
 
-**Fullstack Developer Home Task — Interactive Dashboard with Firebase**
+**Fullstack Developer Home Task --- Interactive Dashboard with
+Firebase**
 
----
+------------------------------------------------------------------------
+
+# 🔐 How to Test (Editor Access)
+
+The application supports two roles:
+
+-   **Viewer** → Can view data only\
+-   **Editor** → Can create / update / delete traffic entries
+
+### 👤 Viewer Access
+
+You can log in using **any Google account** to access the dashboard as a
+viewer.
+
+------------------------------------------------------------------------
+
+### ✏️ Editor Demo Account
+
+To test full CRUD functionality (Add / Edit / Delete):
+
+Email: sapir.ohava.test@gmail.com
+
+Password: DontPushToMain!#42
+
+This account is registered in Firestore under the `editors` collection.\
+If the email document exists → user is granted editor permissions
+(validated server-side).
+
+Role detection can also be verified via:
+
+GET /api/me
+
+------------------------------------------------------------------------
 
 ## 🌐 Live Deployed Application
 
-Production URL:
+Production URL: https://cortex-job-dashboard.web.app
 
-https://cortex-job-dashboard.web.app
+API Base: https://cortex-job-dashboard.web.app/api
 
-API Base:
+Health Check: https://cortex-job-dashboard.web.app/api/health
 
-https://cortex-job-dashboard.web.app/api
-
-Health Check:
-
-https://cortex-job-dashboard.web.app/api/health
-
----
+------------------------------------------------------------------------
 
 ## 📄 Assignment Document
 
 See: docs/Fullstack home task.pdf
 
----
+------------------------------------------------------------------------
 
 # Overview
 
-This project is a fullstack web application built according to the assignment requirements.
+This project is a fullstack web application built according to the
+assignment requirements.
 
 ### Tech Stack
 
-- Frontend: React (Vite + TypeScript)
-- Backend: Firebase Cloud Functions (Express API)
-- Database: Firebase Firestore
-- Authentication: Firebase Authentication (Google Sign-In)
-- Charts: Recharts
-- Hosting: Firebase Hosting
+-   Frontend: React (Vite + TypeScript)
+-   Backend: Firebase Cloud Functions (Express API)
+-   Database: Firebase Firestore
+-   Authentication: Firebase Authentication (Google Sign-In +
+    Email/Password)
+-   Charts: Recharts
+-   Hosting: Firebase Hosting
 
 Architecture:
 
 Frontend → Express API → Firestore
 
-The frontend does not access Firestore directly. All data flows through a secured backend API.
+The frontend does not access Firestore directly. All data flows through
+a secured backend API.
 
----
+------------------------------------------------------------------------
 
 # Features
 
 ## Core
 
-- Traffic table (date → visits)
-- Line chart visualization
-- Sorting (ascending / descending)
-- Cursor-based pagination
-- Add / Edit / Delete entries
-- Google Authentication
-- Backend token verification
+-   Traffic table (date → visits)
+-   Line chart visualization
+-   Sorting (ascending / descending)
+-   Cursor-based pagination
+-   Add / Edit / Delete entries
+-   Google Authentication
+-   Backend token verification
 
 ## Bonus
 
-- Daily / Weekly / Monthly aggregation toggle
-- Date range filtering
-- Role-based access control (viewer / editor)
-- Production deployment (Hosting + Functions)
+-   Daily / Weekly / Monthly aggregation toggle
+-   Date range filtering
+-   Role-based access control (viewer / editor)
+-   Production deployment (Hosting + Functions)
 
----
+------------------------------------------------------------------------
 
 # Firestore Structure
 
@@ -77,12 +106,8 @@ Document ID = YYYY-MM-DD
 
 Example:
 
-{
-  "date": "2025-03-01",
-  "visits": 120,
-  "createdAt": timestamp,
-  "updatedAt": timestamp
-}
+{ "date": "2025-03-01", "visits": 120, "createdAt": timestamp,
+"updatedAt": timestamp }
 
 Role collection:
 
@@ -90,33 +115,33 @@ Collection: editors
 
 Document ID = normalized email
 
-If document exists → user is editor.
+If document exists → user is editor (RBAC enforced server-side).
 
----
+------------------------------------------------------------------------
 
 # API Endpoints
 
 Base path: /api
 
-GET    /api/health  
-GET    /api/me  
-GET    /api/traffic  
-POST   /api/traffic  
-PUT    /api/traffic/:id  
-DELETE /api/traffic/:id  
+GET /api/health\
+GET /api/me\
+GET /api/traffic\
+POST /api/traffic\
+PUT /api/traffic/:id\
+DELETE /api/traffic/:id
 
 Authentication header:
 
-Authorization: Bearer <Firebase ID Token>
+Authorization: Bearer `<Firebase ID Token>`{=html}
 
----
+------------------------------------------------------------------------
 
 # Run Locally
 
-Requirements:
+## Requirements
 
-- Node.js v18+
-- Firebase CLI
+-   Node.js v18+
+-   Firebase CLI
 
 Install CLI:
 
@@ -130,78 +155,76 @@ Select project:
 
 firebase use cortex-job-dashboard
 
----
+------------------------------------------------------------------------
 
-Backend:
+## Backend
 
-cd functions  
-npm install  
-npm run build  
+cd functions\
+npm install\
+npm run build
 
----
+------------------------------------------------------------------------
 
-Frontend:
+## Frontend
 
-cd frontend  
-npm install  
+cd frontend\
+npm install
 
 Create frontend/.env.local and add:
 
 VITE_FIREBASE_API_KEY=...
 VITE_FIREBASE_AUTH_DOMAIN=cortex-job-dashboard.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=cortex-job-dashboard
-VITE_FIREBASE_APP_ID=...
+VITE_FIREBASE_PROJECT_ID=cortex-job-dashboard VITE_FIREBASE_APP_ID=...
 VITE_FIREBASE_MEASUREMENT_ID=...
 
 VITE_API_BASE_URL=http://127.0.0.1:5001/cortex-job-dashboard/us-central1/api
 
----
+------------------------------------------------------------------------
 
-Start emulators (from root):
+## Start Emulators (from root)
 
-firebase emulators:start --only functions,firestore --import ./emulator-data --export-on-exit
+firebase emulators:start --only functions,firestore --import
+./emulator-data --export-on-exit
 
----
+------------------------------------------------------------------------
 
-Start frontend:
+## Start Frontend
 
-cd frontend  
-npm run dev  
+cd frontend\
+npm run dev
 
----
+------------------------------------------------------------------------
 
 # Production Deployment
 
 Build frontend:
 
-cd frontend  
-npm run build  
+cd frontend\
+npm run build
 
 Build backend:
 
-cd ../functions  
-npm run build  
+cd ../functions\
+npm run build
 
 Deploy:
 
 firebase deploy --only functions,hosting
 
----
+------------------------------------------------------------------------
 
-Production URL:
+Production URL: https://cortex-job-dashboard.web.app
 
-https://cortex-job-dashboard.web.app
-
----
+------------------------------------------------------------------------
 
 # Summary
 
 This project demonstrates:
 
-- Secure frontend/backend separation
-- Firebase Auth with server-side verification
-- Role-based access control
-- Firestore transactional writes
-- Cursor-based pagination
-- Data aggregation (daily / weekly / monthly)
-- Production-ready Firebase deployment
+-   Secure frontend/backend separation
+-   Firebase Auth with server-side verification
+-   Role-based access control (RBAC)
+-   Firestore transactional writes
+-   Cursor-based pagination
+-   Data aggregation (daily / weekly / monthly)
+-   Production-ready Firebase deployment
